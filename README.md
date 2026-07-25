@@ -18,7 +18,7 @@ Open the page, edit the sequence (name + duration per hold), hit **START**.
 | **Preset** | Four ready-made routines; loading one replaces the sequence. |
 | **Rounds** | Repeat the whole sequence *n* times. |
 | **Rest between** | Optional rest segment inserted between holds (not after the last one). |
-| **Lead-in** | "Get ready" countdown before the first hold. |
+| **Lead-in** | Countdown before the first hold — 10s by default, enough room for a full 5·4·3·2·1. |
 | **Voice** | Spoken cues on/off (the beeps stay either way). |
 | **Screen** | Requests a screen wake lock so the phone doesn't dim mid-hold. |
 | **♪ / ▚ / ☾** | Mute, digital rain on/off, light/dark mode. |
@@ -41,6 +41,12 @@ For each hold, counted from the time remaining:
 
 Cues that don't fit are skipped rather than crowded: a 30-second hold gets the
 10-second call and the final five, not "thirty seconds" the instant it starts.
+
+Spoken lines are kept short and each new cue pre-empts any line still playing.
+Browser speech synthesis *queues* utterances, so one long line will push every
+short one after it late — which is how a 5·4·3·2·1 ends up compressed into the
+last two seconds. A countdown number is worthless a second after its second, so
+the newest cue always wins.
 
 ## Keeping time with the screen off
 
@@ -96,7 +102,7 @@ Serving locally works too: `npx http-server -p 8099 -s .` (a service worker need
 ## Development
 
 ```
-node tools/verify.mjs          # 39 checks: cue timeline, transport, screen-lock recovery
+node tools/verify.mjs          # 52 checks: cue timeline, countdown timing, screen-lock recovery
 node tools/make-icons.mjs      # regenerate the PNG icons from the shapes in icon.svg
 ```
 

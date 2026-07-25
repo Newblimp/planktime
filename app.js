@@ -48,17 +48,19 @@
 
   var DEFAULTS = {
     items: PRESETS[0].items.map(function (i) { return { name: i.name, dur: i.dur }; }),
-    rounds: 1, rest: 0, prep: 5, voice: true, wake: true, sound: true, rain: true
+    rounds: 1, rest: 0, prep: 10, voice: true, wake: true, sound: true, rain: true
   };
 
   var KEY = 'plankmatrix.v1';
+  var SCHEMA = 2;   // 2: lead-in lengthened so the countdown has room to breathe
   var cfg = load();
 
   function load() {
-    var c = {}, k;
+    var c = {}, k, was = 0;
     for (k in DEFAULTS) c[k] = DEFAULTS[k];
     try {
       var raw = JSON.parse(localStorage.getItem(KEY) || '{}');
+      was = raw.v | 0;
       for (k in DEFAULTS) if (raw[k] != null) c[k] = raw[k];
       if (!Array.isArray(c.items) || !c.items.length) c.items = DEFAULTS.items;
       c.items = c.items.map(function (i) {
@@ -68,6 +70,10 @@
       c.rest = clamp(c.rest | 0, 0, 600);
       c.prep = clamp(c.prep | 0, 0, 60);
     } catch (e) { /* corrupt storage → defaults */ }
+    // the old 5s lead-in didn't leave room for a 5·4·3·2·1 count; nudge it once,
+    // but leave a lead-in the user has deliberately set to something else alone
+    if (was < 2 && c.prep > 0 && c.prep <= 5) c.prep = DEFAULTS.prep;
+    c.v = SCHEMA;
     if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches &&
         localStorage.getItem(KEY) === null) c.rain = false;
     return c;
@@ -233,6 +239,10 @@
   function speak(text) {
     if (!text || !speechOK || !cfg.voice || !cfg.sound) return;
     try {
+      // Utterances queue, so a line still playing would push the next one late —
+      // and a countdown number is worthless a second after its second. The newest
+      // cue is always the relevant one, so it pre-empts whatever is still talking.
+      if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
       var u = new SpeechSynthesisUtterance(text);
       u.rate = 1.05; u.pitch = 1; u.volume = 1; u.lang = (voice && voice.lang) || 'en-US';
       if (voice) u.voice = voice;
@@ -247,7 +257,7 @@
     var segs = [], t = 0, r, i, it, last;
     var items = c.items.filter(function (x) { return x.dur > 0; });
     if (!items.length) return { segs: segs, total: 0 };
-    if (c.prep > 0) { segs.push({ type: 'prep', name: 'Get ready', dur: c.prep, at: 0, round: 0, idx: 0 }); t = c.prep; }
+    if (c.prep > 0) { segs.push({ type: 'prep', name: 'Lead-in', dur: c.prep, at: 0, round: 0, idx: 0 }); t = c.prep; }
     for (r = 0; r < c.rounds; r++) {
       for (i = 0; i < items.length; i++) {
         it = items[i];
@@ -269,8 +279,10 @@
       s = segs[i];
       next = segs[i + 1];
       if (i === 0) {
+        // keep the opening line short: it has to be out of the way before the
+        // lead-in countdown starts talking
         cues.push({ t: 0, tone: 'start',
-          say: s.type === 'prep' ? 'Get ready. First up, ' + (segs[1] ? segs[1].name : '') : s.name });
+          say: s.type === 'prep' ? (segs[1] ? segs[1].name : '') : s.name });
       }
       // every whole minute remaining
       for (m = 60; m < s.dur; m += 60) {
@@ -285,7 +297,7 @@
       bt = s.at + s.dur;
       if (next) {
         if (next.type === 'rest') say = 'Rest. Next up, ' + (segs[i + 2] ? segs[i + 2].name : 'finish');
-        else if (s.type === 'prep') say = 'Begin. ' + next.name;
+        else if (s.type === 'prep') say = 'Begin';   // the name was called at the top of the lead-in
         else if (s.type === 'rest') say = 'Go. ' + next.name;
         else say = 'Switch. ' + next.name;
         cues.push({ t: bt, tone: next.type === 'rest' ? 'rest' : 'switch', say: say });
@@ -301,6 +313,7 @@
   /* ────────────────────────────────────────────────────────── runtime ── */
 
   var LOOKAHEAD = 120;   // seconds of audio scheduled ahead of the playhead
+  var TICK_MS = 100;     // pump cadence: the upper bound on how late a spoken cue can be
   var R = { running: false, paused: false, tl: null, cues: null, startT: 0, frozen: 0, off: null, seg: -1 };
 
   function elapsed() { return R.paused ? R.frozen : nowS() - R.startT; }
@@ -372,7 +385,7 @@
     R.startT = nowS();
     requestWakeLock();
     setMediaSession(true);
-    ticker(200);
+    ticker(TICK_MS);
     show('run');
     UI.reset();
     pump();          // fires the t=0 cue inside the user gesture (unlocks iOS speech)
@@ -409,7 +422,7 @@
       R.startT = nowS() - R.frozen;
       R.paused = false; R.off = null;
       Audio_.resume(); Audio_.hold(true);
-      ticker(200); startRAF(); pump();
+      ticker(TICK_MS); startRAF(); pump();
     }
     setMediaSession(R.running);
     UI.paint(true);
@@ -833,7 +846,7 @@
 
   // small debug surface (used by tools/verify.mjs)
   window.__PLANK__ = { buildTimeline: buildTimeline, buildCues: buildCues, fmt: fmt,
-                       parseDur: parseDur, cfg: cfg, R: R };
+                       parseDur: parseDur, speak: speak, cfg: cfg, R: R };
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     addEventListener('load', function () {
