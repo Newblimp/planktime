@@ -83,11 +83,9 @@ pattern (single, double, triple, tick, three-note switch, four-note finish).
 
 ## Publishing to GitHub Pages
 
-Everything is static, in the repository root. Either:
-
-- **Settings → Pages → Deploy from a branch**, pick the branch and `/ (root)`, or
-- **Settings → Pages → Source: GitHub Actions**, which picks up
-  `.github/workflows/pages.yml` on push.
+Everything is static, in the repository root, so no build step is involved:
+**Settings → Pages → Deploy from a branch**, `main` / `(root)`. Every push to
+`main` republishes the site, usually within a minute.
 
 Then open the URL on your phone and, optionally, *Add to Home Screen* — the app has
 a manifest and works offline, and standalone mode gives it the full screen.
