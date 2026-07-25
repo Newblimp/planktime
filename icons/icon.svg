@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Plank Matrix">
+  <rect width="512" height="512" fill="#000"/>
+  <g fill="none" stroke="#00ff41" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="26" y="26" width="460" height="460" rx="26" stroke-width="10" opacity=".35"/>
+    <g stroke-width="30">
+      <path d="M168 236 L400 296"/>
+      <path d="M162 240 L152 336 L232 336"/>
+      <path d="M400 296 L424 392"/>
+    </g>
+    <path d="M92 404 H452" stroke-width="14" opacity=".5"/>
+    <g stroke-width="8" opacity=".28" stroke-dasharray="6 18">
+      <path d="M96 70 V180"/><path d="M256 62 V150"/><path d="M416 70 V190"/>
+    </g>
+  </g>
+  <circle cx="128" cy="228" r="34" fill="#00ff41"/>
+</svg>

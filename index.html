@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>PLANK//MATRIX — Interval Timer</title>
+<meta name="description" content="A Matrix-styled plank interval timer with spoken cues that keeps running when your screen is off.">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#dff3e3" media="(prefers-color-scheme: light)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Plank">
+<meta name="color-scheme" content="dark light">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<script>/* set the theme before first paint */
+try{var t=localStorage.getItem('plankmatrix.theme');
+document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');}catch(e){}
+</script>
+<style>
+/* ── theme tokens ───────────────────────────────────────────── */
+:root{
+  --bg:#000;--bg2:#050c06;--fg:#00ff41;--dim:#0b7a2c;--dim2:#064f1d;
+  --hot:#c6ffd6;--line:rgba(0,255,65,.22);--line2:rgba(0,255,65,.10);
+  --panel:rgba(0,20,6,.55);--shadow:0 0 8px rgba(0,255,65,.45);--scrim:rgba(0,0,0,.80);
+  --rain-tail:#00c235;--rain-head:#d8ffe4;--rain-fade:0,0,0;--fade-a:.055;
+  --warn:#ffe14d;--danger:#ff4d4d;
+  --gap:clamp(8px,2.2vw,14px);
+}
+:root[data-theme=light]{
+  --bg:#dcece0;--bg2:#f2fbf4;--fg:#04381a;--dim:#2b6b3f;--dim2:#8fbf9f;
+  --hot:#012a10;--line:rgba(4,56,26,.34);--line2:rgba(4,56,26,.16);
+  --panel:rgba(252,255,253,.80);--shadow:none;--scrim:rgba(226,240,229,.88);
+  --rain-tail:#69ad7d;--rain-head:#25603a;--rain-fade:220,236,224;--fade-a:.085;
+  --warn:#8a5a00;--danger:#a11212;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);
+  font:500 16px/1.4 ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeSpeed;
+  overscroll-behavior:none;-webkit-tap-highlight-color:transparent;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+#rain{position:fixed;inset:0;width:100%;height:100%;z-index:0;display:block;opacity:.85;
+  /* the canvas is the only animated surface: isolate it from layout/paint */
+  contain:layout paint style;pointer-events:none}
+:root[data-theme=light] #rain{opacity:.4}
+.shell{position:relative;z-index:1;min-height:100dvh;display:flex;flex-direction:column;
+  max-width:760px;margin:0 auto;padding:var(--gap)}
+/* ── chrome ─────────────────────────────────────────────────── */
+header{display:flex;align-items:center;gap:8px;margin-bottom:var(--gap)}
+.brand{font-size:clamp(13px,3.6vw,17px);letter-spacing:.18em;text-shadow:var(--shadow);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand b{font-weight:700}
+.brand i{font-style:normal;color:var(--dim)}
+.spacer{flex:1}
+button,input,select{font:inherit;color:inherit}
+.btn{background:var(--panel);border:1px solid var(--line);color:var(--fg);
+  padding:9px 12px;border-radius:2px;cursor:pointer;letter-spacing:.08em;
+  text-transform:uppercase;font-size:13px;line-height:1;touch-action:manipulation;
+  transition:background .12s linear,border-color .12s linear}
+.btn:active{background:rgba(0,255,65,.14)}
+.btn[aria-pressed=true]{border-color:var(--fg);box-shadow:inset 0 0 0 1px var(--line)}
+.btn.icon{padding:9px 10px;min-width:40px}
+.btn:disabled{opacity:.35;cursor:default}
+.btn.primary{border-color:var(--fg);text-shadow:var(--shadow);font-weight:700}
+.btn.ghost{background:transparent}
+.btn.danger{border-color:var(--danger);color:var(--danger)}
+/* ── panels ─────────────────────────────────────────────────── */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:3px;
+  padding:var(--gap);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.panel + .panel{margin-top:var(--gap)}
+.lbl{font-size:11px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase;
+  display:block;margin-bottom:6px}
+main{flex:1;display:flex;flex-direction:column}
+[hidden]{display:none!important}
+/* ── routine editor ─────────────────────────────────────────── */
+#rows{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;align-items:center}
+.nm{background:rgba(0,0,0,.25);border:1px solid var(--line2);
+  border-radius:2px;padding:10px;min-width:0;width:100%}
+:root[data-theme=light] .nm{background:rgba(255,255,255,.6)}
+input:focus-visible,.btn:focus-visible,select:focus-visible{outline:1px solid var(--fg);outline-offset:1px}
+.dur{display:flex;align-items:center;border:1px solid var(--line2);border-radius:2px}
+.dur input{width:60px;text-align:center;background:transparent;border:0;padding:10px 0;
+  font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+.dur button{background:transparent;border:0;color:var(--dim);padding:10px 9px;cursor:pointer;
+  font-size:15px;line-height:1;touch-action:manipulation}
+.dur button:active{color:var(--fg)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:var(--gap)}
+.opts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+select{background:rgba(0,0,0,.25);border:1px solid var(--line2);border-radius:2px;padding:10px;width:100%}
+:root[data-theme=light] select{background:rgba(255,255,255,.6)}
+.hint{font-size:11.5px;color:var(--dim);letter-spacing:.04em;margin-top:10px;line-height:1.5}
+.total{font-size:12px;color:var(--dim);letter-spacing:.1em;text-align:right}
+#start{width:100%;padding:18px;font-size:16px;margin-top:var(--gap)}
+/* ── run view ───────────────────────────────────────────────── */
+#run{flex:1;display:flex;flex-direction:column;gap:var(--gap)}
+.stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:6px;position:relative;padding:10px 0;isolation:isolate}
+/* soft vignette keeps the readout legible over the rain */
+.stage::before{content:"";position:absolute;inset:-4% -12%;z-index:-1;pointer-events:none;
+  background:radial-gradient(closest-side ellipse at 50% 50%,
+    var(--scrim) 0%,var(--scrim) 58%,transparent 100%)}
+.now{font-size:clamp(20px,6.4vw,34px);letter-spacing:.1em;text-transform:uppercase;
+  text-align:center;text-shadow:var(--shadow);min-height:1.2em}
+.ring{position:relative;width:min(74vw,330px);aspect-ratio:1;display:grid;place-items:center;margin:2px 0}
+.ring svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:3}
+.trackc{stroke:var(--line2)}
+.progc{stroke:var(--fg);stroke-linecap:butt;filter:drop-shadow(0 0 4px currentColor)}
+:root[data-theme=light] .progc{filter:none}
+.clock{font-size:clamp(52px,17vw,96px);font-weight:700;letter-spacing:.02em;
+  font-variant-numeric:tabular-nums;text-shadow:var(--shadow);line-height:1}
+.clock.warn{color:var(--warn)}
+.sub{font-size:12px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase;text-align:center}
+.next{font-size:13px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase;text-align:center;min-height:1.3em}
+.next b{color:var(--fg);font-weight:600}
+.bar{height:3px;background:var(--line2);border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;width:100%;background:var(--fg);
+  transform:scaleX(0);transform-origin:left;will-change:transform}
+.ctrls{display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:8px}
+.ctrls .btn{padding:16px 8px}
+.flash{position:fixed;inset:0;z-index:2;pointer-events:none;background:var(--fg);opacity:0}
+.flash.on{animation:fl .35s ease-out}
+@keyframes fl{from{opacity:.16}to{opacity:0}}
+.badge{position:absolute;top:0;right:0;font-size:10px;letter-spacing:.14em;color:var(--dim)}
+@media (prefers-reduced-motion:reduce){.flash.on{animation:none}}
+@media (max-height:560px){.ring{width:min(46vw,190px)}.clock{font-size:clamp(38px,11vw,60px)}}
+</style>
+</head>
+<body>
+<canvas id="rain" aria-hidden="true"></canvas>
+<div class="flash" id="flash" aria-hidden="true"></div>
+
+<div class="shell">
+  <header>
+    <div class="brand"><b>PLANK</b><i>//</i>MATRIX</div>
+    <div class="spacer"></div>
+    <button class="btn icon" id="rainToggle" aria-pressed="true" title="Toggle digital rain">▚</button>
+    <button class="btn icon" id="soundToggle" aria-pressed="true" title="Mute / unmute">♪</button>
+    <button class="btn icon" id="themeToggle" title="Light / dark mode">☾</button>
+  </header>
+
+  <main>
+    <!-- ══ SETUP ══════════════════════════════════════════════ -->
+    <section class="view" id="setup">
+      <div class="panel">
+        <span class="lbl">Sequence</span>
+        <div id="rows"></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn ghost" id="addRow">+ Add hold</button>
+          <div class="spacer"></div>
+          <div class="total" id="totalOut">—</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="grid2">
+          <div>
+            <span class="lbl">Preset</span>
+            <select id="preset">
+              <option value="">— load preset —</option>
+            </select>
+          </div>
+          <div>
+            <span class="lbl">Rounds</span>
+            <div class="dur" style="width:100%;justify-content:space-between">
+              <button type="button" data-r="-1" aria-label="Fewer rounds">−</button>
+              <input id="rounds" type="text" inputmode="numeric" value="1" aria-label="Rounds">
+              <button type="button" data-r="1" aria-label="More rounds">+</button>
+            </div>
+          </div>
+          <div>
+            <span class="lbl">Rest between</span>
+            <div class="dur" style="width:100%;justify-content:space-between">
+              <button type="button" data-rest="-5" aria-label="Less rest">−</button>
+              <input id="rest" type="text" inputmode="numeric" value="0:00" aria-label="Rest between holds">
+              <button type="button" data-rest="5" aria-label="More rest">+</button>
+            </div>
+          </div>
+          <div>
+            <span class="lbl">Lead-in</span>
+            <div class="dur" style="width:100%;justify-content:space-between">
+              <button type="button" data-prep="-5" aria-label="Less lead-in">−</button>
+              <input id="prep" type="text" inputmode="numeric" value="0:05" aria-label="Lead-in countdown">
+              <button type="button" data-prep="5" aria-label="More lead-in">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="opts">
+          <button class="btn" id="voiceToggle" aria-pressed="true">Voice ▸ on</button>
+          <button class="btn" id="wakeToggle" aria-pressed="true">Screen ▸ awake</button>
+        </div>
+        <p class="hint" id="hint">
+          Cues: every whole minute remaining, 30s, 10s, then 5·4·3·2·1 and “switch”.
+          Audio is scheduled ahead on the audio clock, so it keeps firing with the screen off —
+          leave the tab open and don’t force-quit the browser.
+        </p>
+      </div>
+
+      <button class="btn primary" id="start">▶ Start</button>
+    </section>
+
+    <!-- ══ RUN ════════════════════════════════════════════════ -->
+    <section class="view" id="run" hidden>
+      <div class="stage">
+        <div class="badge" id="roundOut"></div>
+        <div class="now" id="nowOut">—</div>
+        <div class="ring">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="trackc" cx="50" cy="50" r="47"></circle>
+            <circle class="progc" id="prog" cx="50" cy="50" r="47"
+                    stroke-dasharray="295.31" stroke-dashoffset="0"></circle>
+          </svg>
+          <div>
+            <div class="clock" id="clock" role="timer" aria-live="off">0:00</div>
+            <div class="sub" id="stepOut"></div>
+          </div>
+        </div>
+        <div class="next" id="nextOut"></div>
+      </div>
+      <div>
+        <div class="bar"><i id="totalBar"></i></div>
+        <div class="sub" style="margin-top:6px;letter-spacing:.1em" id="remainOut"></div>
+      </div>
+      <div class="ctrls">
+        <button class="btn" id="prev">⏮ Prev</button>
+        <button class="btn primary" id="pause">❚❚ Pause</button>
+        <button class="btn" id="next">Skip ⏭</button>
+      </div>
+      <button class="btn danger ghost" id="stop">■ End session</button>
+    </section>
+  </main>
+</div>
+
+<script src="app.js" defer></script>
+</body>
+</html>
