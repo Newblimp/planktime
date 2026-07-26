@@ -1,8 +1,10 @@
 /* Offline shell for PLANK//MATRIX.
  * Cache-first for the few static files; network refresh in the background. */
-var CACHE = 'plankmatrix-v3';
+/* Keep ASSETS in step with the files index.html actually references —
+ * tools/assets.test.mjs fails the build if it drifts. */
+var CACHE = 'plankmatrix-v4';
 var ASSETS = [
-  '.', 'index.html', 'app.js', 'manifest.webmanifest',
+  '.', 'index.html', 'app.js', 'core.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'
 ];
 

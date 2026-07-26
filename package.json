@@ -1,0 +1,17 @@
+{
+  "name": "plankmatrix",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A Matrix-styled plank interval timer with spoken cues that keeps running when your screen is off.",
+  "scripts": {
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test tools/*.test.mjs",
+    "test:e2e": "node tools/verify.mjs",
+    "serve": "node tools/dev-server.mjs",
+    "icons": "node tools/make-icons.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}
