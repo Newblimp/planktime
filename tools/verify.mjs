@@ -238,6 +238,115 @@ ok('a custom lead-in is not touched by the migration', (await prepAfterReload())
 await stored({ prep: 0 });                     // v1 data, lead-in switched off
 ok('a disabled lead-in stays disabled', (await prepAfterReload()) === '0:00');
 
+/* ── 7. theme: system / dark / light ── */
+const theme = () => page.getAttribute('html', 'data-theme');
+const themeMeta = () => page.getAttribute('#tc', 'content');
+const pressed = () => page.$$eval('.seg button[data-theme]',
+  bs => bs.filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.dataset.theme));
+const reload = async () => {
+  await page.waitForTimeout(300);            // let the save debounce flush
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.__PLANK__);
+};
+// media emulation lands in the renderer asynchronously
+const emulate = async (colorScheme) => {
+  await page.emulateMedia({ colorScheme });
+  await page.waitForTimeout(150);
+};
+
+await emulate('light');
+await page.evaluate(() => localStorage.removeItem('plankmatrix.theme'));
+await reload();
+ok('defaults to following the system', (await theme()) === 'light' &&
+   JSON.stringify(await pressed()) === '["system"]', (await theme()) + ' ' + (await pressed()));
+await emulate('dark');
+ok('follows the system switching to dark live', (await theme()) === 'dark', await theme());
+
+await page.click('.seg button[data-theme=light]');
+ok('forcing light overrides a dark system', (await theme()) === 'light', await theme());
+ok('the forced mode is the pressed one', JSON.stringify(await pressed()) === '["light"]', await pressed());
+ok('the status-bar colour follows the theme', (await themeMeta()) === '#dcece0', await themeMeta());
+await emulate('light');
+await emulate('dark');
+ok('a forced theme ignores system changes', (await theme()) === 'light', await theme());
+await reload();
+ok('a forced theme survives a reload', (await theme()) === 'light' &&
+   JSON.stringify(await pressed()) === '["light"]', (await theme()) + ' ' + (await pressed()));
+
+await page.click('.seg button[data-theme=dark]');
+ok('forcing dark works against a light system', (await theme()) === 'dark' &&
+   (await themeMeta()) === '#000000');
+await page.click('.seg button[data-theme=system]');
+ok('back to system resumes tracking', (await theme()) === 'dark', await theme());
+ok('system mode clears the stored override',
+   (await page.evaluate(() => localStorage.getItem('plankmatrix.theme'))) === null);
+await emulate('light');
+await reload();
+ok('system mode survives a reload', (await theme()) === 'light' &&
+   JSON.stringify(await pressed()) === '["system"]', (await theme()) + ' ' + (await pressed()));
+
+/* ── 8. the hold picker ── */
+const HOLDS = ['Front plank', 'Side plank right', 'Side plank left', 'Back plank'];
+const row = (n, sel) => `#rows .row:nth-child(${n}) ${sel}`;
+const names = () => page.evaluate(() =>
+  window.__PLANK__.buildTimeline(window.__PLANK__.cfg).segs.map(s => s.name));
+
+await page.evaluate(() => localStorage.setItem('plankmatrix.v1', JSON.stringify({
+  v: 2, prep: 0, rounds: 1, rest: 0,
+  items: [{ name: 'Front plank', dur: 120 }, { name: 'Bird dog', dur: 30 }]   // no custom flag
+})));
+await reload();
+
+const opts = await page.$$eval(row(1, 'select') + ' option', os => os.map(o => o.textContent));
+ok('the picker lists the four holds plus Custom',
+   JSON.stringify(opts) === JSON.stringify(HOLDS.concat(['Custom…'])), JSON.stringify(opts));
+ok('a listed hold shows as its option', (await page.inputValue(row(1, 'select'))) === 'Front plank');
+ok('a listed hold has no free-text field', (await page.locator(row(1, 'input[data-k=name]')).count()) === 0);
+ok('an off-list name loads as Custom', (await page.inputValue(row(2, 'select'))) === '__custom');
+ok('…with the name kept in the text field',
+   (await page.inputValue(row(2, 'input[data-k=name]'))) === 'Bird dog');
+
+await page.selectOption(row(1, 'select'), '__custom');
+ok('choosing Custom reveals an empty name field',
+   (await page.locator(row(1, 'input[data-k=name]')).count()) === 1 &&
+   (await page.inputValue(row(1, 'input[data-k=name]'))) === '');
+await page.fill(row(1, 'input[data-k=name]'), 'Copenhagen plank');
+ok('a custom name reaches the timeline as you type',
+   (await names())[0] === 'Copenhagen plank', JSON.stringify(await names()));
+
+await page.selectOption(row(2, 'select'), 'Back plank');
+ok('choosing a listed hold hides the text field',
+   (await page.locator(row(2, 'input[data-k=name]')).count()) === 0);
+ok('…and renames the hold', (await names())[1] === 'Back plank', JSON.stringify(await names()));
+
+await reload();
+ok('a custom hold survives a reload', (await page.inputValue(row(1, 'select'))) === '__custom' &&
+   (await page.inputValue(row(1, 'input[data-k=name]'))) === 'Copenhagen plank');
+await page.fill(row(1, 'input[data-k=name]'), '   ');
+await page.dispatchEvent(row(1, 'input[data-k=name]'), 'change');
+ok('a blank custom name falls back to a label',
+   (await page.inputValue(row(1, 'input[data-k=name]'))) === 'Custom hold', await names());
+
+// the preset picker still round-trips through the new model
+await page.selectOption('#preset', 'classic');
+ok('loading a preset fills the pickers, not custom fields',
+   (await page.locator('#rows input[data-k=name]').count()) === 0 &&
+   (await page.inputValue(row(1, 'select'))) === 'Front plank');
+ok('preset holds all map onto listed options',
+   (await names()).every(n => HOLDS.indexOf(n) >= 0), JSON.stringify(await names()));
+
+// a custom name still focused must not leak into whatever replaces that row
+await page.selectOption(row(1, 'select'), '__custom');
+await page.fill(row(1, 'input[data-k=name]'), 'Scratch name');   // field stays focused
+await page.selectOption('#preset', 'starter');
+ok('an unblurred custom name cannot leak into a loaded preset',
+   (await names())[0] === 'Front plank', JSON.stringify(await names()));
+await page.selectOption(row(2, 'select'), '__custom');
+await page.fill(row(2, 'input[data-k=name]'), 'Hollow hold');
+await page.selectOption(row(2, 'select'), 'Back plank');         // switch away while focused
+ok('an unblurred custom name cannot leak into a listed hold',
+   (await names())[1] === 'Back plank', JSON.stringify(await names()));
+
 ok('no console/page errors', errors.length === 0, errors.join(' | '));
 
 console.log(`\n${pass} passed, ${fail} failed`);

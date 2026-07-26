@@ -46,8 +46,12 @@
     ] }
   ];
 
+  // the picker's fixed options; anything else is a custom hold
+  var HOLDS = ['Front plank', 'Side plank right', 'Side plank left', 'Back plank'];
+  var CUSTOM = '__custom';
+
   var DEFAULTS = {
-    items: PRESETS[0].items.map(function (i) { return { name: i.name, dur: i.dur }; }),
+    items: PRESETS[0].items.map(function (i) { return { name: i.name, dur: i.dur, custom: false }; }),
     rounds: 1, rest: 0, prep: 10, voice: true, wake: true, sound: true, rain: true
   };
 
@@ -64,7 +68,11 @@
       for (k in DEFAULTS) if (raw[k] != null) c[k] = raw[k];
       if (!Array.isArray(c.items) || !c.items.length) c.items = DEFAULTS.items;
       c.items = c.items.map(function (i) {
-        return { name: String(i.name || 'Hold').slice(0, 40), dur: clamp(i.dur | 0, 1, 3600) };
+        var name = String(i.name || 'Hold').slice(0, 40);
+        return { name: name, dur: clamp(i.dur | 0, 1, 3600),
+                 // routines saved before the picker existed: anything off the
+                 // list is treated as a custom hold
+                 custom: i.custom == null ? HOLDS.indexOf(name) < 0 : !!i.custom };
       });
       c.rounds = clamp(c.rounds | 0, 1, 20);
       c.rest = clamp(c.rest | 0, 0, 600);
@@ -79,12 +87,15 @@
     return c;
   }
   var saveT = 0;
-  function save() {
-    clearTimeout(saveT);
-    saveT = setTimeout(function () {
-      try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) {}
-    }, 250);
+  function writeCfg() {
+    saveT = 0;
+    try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) {}
   }
+  function save() { clearTimeout(saveT); saveT = setTimeout(writeCfg, 250); }
+  // a phone can take the tab away between an edit and the debounce firing
+  function flushSave() { if (saveT) { clearTimeout(saveT); writeCfg(); } }
+  addEventListener('pagehide', flushSave);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) flushSave(); });
 
   /* ─────────────────────────────────────────────────────────── format ── */
 
@@ -261,7 +272,8 @@
     for (r = 0; r < c.rounds; r++) {
       for (i = 0; i < items.length; i++) {
         it = items[i];
-        segs.push({ type: 'work', name: it.name, dur: it.dur, at: t, round: r + 1, idx: i + 1, of: items.length });
+        segs.push({ type: 'work', name: it.name || 'Hold', dur: it.dur, at: t,
+                    round: r + 1, idx: i + 1, of: items.length });
         t += it.dur;
         last = (r === c.rounds - 1 && i === items.length - 1);
         if (c.rest > 0 && !last) {
@@ -582,21 +594,35 @@
   function renderRows() {
     var frag = document.createDocumentFragment();
     cfg.items.forEach(function (it, i) {
-      var row = document.createElement('div');
+      var row = document.createElement('div'), opts = '', h;
       row.className = 'row';
+      for (h = 0; h < HOLDS.length; h++) {
+        opts += '<option value="' + esc(HOLDS[h]) + '"' +
+                (!it.custom && it.name === HOLDS[h] ? ' selected' : '') + '>' + esc(HOLDS[h]) + '</option>';
+      }
+      opts += '<option value="' + CUSTOM + '"' + (it.custom ? ' selected' : '') + '>Custom…</option>';
       row.innerHTML =
-        '<input class="nm" type="text" value="' + esc(it.name) + '" data-i="' + i + '" data-k="name" aria-label="Hold name" maxlength="40">' +
+        '<select data-i="' + i + '" data-k="hold" aria-label="Hold ' + (i + 1) + '">' + opts + '</select>' +
         '<span class="dur">' +
           '<button type="button" data-i="' + i + '" data-d="-15" aria-label="Less time">−</button>' +
           '<input type="text" inputmode="numeric" value="' + fmt(it.dur) + '" data-i="' + i + '" data-k="dur" aria-label="Duration">' +
           '<button type="button" data-i="' + i + '" data-d="15" aria-label="More time">+</button>' +
         '</span>' +
-        '<button class="btn ghost" data-i="' + i + '" data-x="1" aria-label="Remove ' + esc(it.name) + '">✕</button>';
+        '<button class="btn ghost" data-i="' + i + '" data-x="1" aria-label="Remove hold ' + (i + 1) + '">✕</button>' +
+        (it.custom
+          ? '<input class="nm" type="text" value="' + esc(it.name) + '" data-i="' + i + '" data-k="name" ' +
+            'placeholder="Name this hold" aria-label="Custom hold name" maxlength="40">'
+          : '');
       frag.appendChild(row);
     });
     rowsEl.textContent = '';
     rowsEl.appendChild(frag);
     renderTotal();
+  }
+
+  function focusRow(i, sel) {
+    var el = rowsEl.querySelector(sel.replace('%i', i));
+    if (el) el.focus();
   }
 
   function renderTotal() {
@@ -621,19 +647,40 @@
   });
 
   rowsEl.addEventListener('change', function (ev) {
-    var t = ev.target;
+    var t = ev.target, i = +t.dataset.i, it = cfg.items[i];
+    // A field that has been re-rendered away still fires change when it loses
+    // focus. Left unguarded that writes a stale name into whatever now sits at
+    // this index — e.g. typing a custom name and then loading a preset.
+    if (!it || !rowsEl.contains(t)) return;
+    if (t.dataset.k === 'hold') {
+      if (t.value === CUSTOM) { it.custom = true; it.name = ''; }
+      else { it.custom = false; it.name = t.value; }
+      save(); renderRows();
+      if (it.custom) focusRow(i, 'input[data-k=name][data-i="%i"]');
+      return;
+    }
     if (t.tagName !== 'INPUT') return;
-    var i = +t.dataset.i;
-    if (t.dataset.k === 'name') { cfg.items[i].name = t.value.trim() || 'Hold'; t.value = cfg.items[i].name; }
-    else { cfg.items[i].dur = clamp(parseDur(t.value, cfg.items[i].dur), 5, 3600); t.value = fmt(cfg.items[i].dur); }
+    if (t.dataset.k === 'name') {
+      if (!it.custom) return;
+      it.name = t.value.trim() || 'Custom hold'; t.value = it.name;
+    }
+    else { it.dur = clamp(parseDur(t.value, it.dur), 5, 3600); t.value = fmt(it.dur); }
     save(); renderTotal();
   });
 
+  // keep a custom name in sync as it is typed, so starting without blurring works
+  rowsEl.addEventListener('input', function (ev) {
+    var t = ev.target, it = cfg.items[+t.dataset.i];
+    if (t.tagName === 'INPUT' && t.dataset.k === 'name' && it && it.custom && rowsEl.contains(t)) {
+      it.name = t.value.slice(0, 40);
+      save();
+    }
+  });
+
   $('addRow').addEventListener('click', function () {
-    cfg.items.push({ name: 'Front plank', dur: 60 });
+    cfg.items.push({ name: HOLDS[0], dur: 60, custom: false });
     save(); renderRows();
-    var inputs = rowsEl.querySelectorAll('input[data-k=name]');
-    if (inputs.length) inputs[inputs.length - 1].focus();
+    focusRow(cfg.items.length - 1, 'select[data-k=hold][data-i="%i"]');
   });
 
   // preset picker
@@ -647,7 +694,9 @@
     sel.addEventListener('change', function () {
       var p = PRESETS.filter(function (x) { return x.id === sel.value; })[0];
       if (!p) return;
-      cfg.items = p.items.map(function (i) { return { name: i.name, dur: i.dur }; });
+      cfg.items = p.items.map(function (i) {
+        return { name: i.name, dur: i.dur, custom: HOLDS.indexOf(i.name) < 0 };
+      });
       sel.value = '';
       save(); renderRows();
     });
@@ -695,22 +744,43 @@
   $('soundToggle').textContent = cfg.sound ? '♪' : '✕';
   bindToggle('rainToggle', 'rain', null, null, function () { Rain.setEnabled(cfg.rain); });
 
-  // theme
-  var themeBtn = $('themeToggle');
-  function applyTheme(t) {
+  /* theme: system | dark | light. "system" stores nothing and tracks the OS live. */
+  var THEME_KEY = 'plankmatrix.theme';
+  var themeBtns = document.querySelectorAll('.seg button[data-theme]');
+  var sysLight = window.matchMedia ? matchMedia('(prefers-color-scheme: light)') : null;
+  var themeMode = 'system';
+  try {
+    var stored = localStorage.getItem(THEME_KEY);
+    if (stored === 'dark' || stored === 'light') themeMode = stored;
+  } catch (e) {}
+
+  function applyTheme() {
+    var t = themeMode === 'system' ? (sysLight && sysLight.matches ? 'light' : 'dark') : themeMode;
     document.documentElement.dataset.theme = t;
-    themeBtn.textContent = t === 'dark' ? '☾' : '☀';
-    themeBtn.setAttribute('aria-label', t === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+    var tc = $('tc');
+    if (tc) tc.content = t === 'light' ? '#dcece0' : '#000000';
+    for (var i = 0; i < themeBtns.length; i++) {
+      themeBtns[i].setAttribute('aria-pressed', String(themeBtns[i].dataset.theme === themeMode));
+    }
     if (Rain) Rain.retheme();   // Rain is hoisted; undefined until its IIFE runs below
   }
-  var savedTheme = null;
-  try { savedTheme = localStorage.getItem('plankmatrix.theme'); } catch (e) {}
-  applyTheme(savedTheme || (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
-  themeBtn.addEventListener('click', function () {
-    var t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    applyTheme(t);
-    try { localStorage.setItem('plankmatrix.theme', t); } catch (e) {}
-  });
+
+  for (var ti = 0; ti < themeBtns.length; ti++) {
+    themeBtns[ti].addEventListener('click', function () {
+      themeMode = this.dataset.theme;
+      applyTheme();
+      try {
+        if (themeMode === 'system') localStorage.removeItem(THEME_KEY);
+        else localStorage.setItem(THEME_KEY, themeMode);
+      } catch (e) {}
+    });
+  }
+  if (sysLight) {
+    var onSys = function () { if (themeMode === 'system') applyTheme(); };
+    if (sysLight.addEventListener) sysLight.addEventListener('change', onSys);
+    else if (sysLight.addListener) sysLight.addListener(onSys);   // Safari < 14
+  }
+  applyTheme();
 
   // transport
   $('start').addEventListener('click', start);

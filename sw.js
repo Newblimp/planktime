@@ -1,6 +1,6 @@
 /* Offline shell for PLANK//MATRIX.
  * Cache-first for the few static files; network refresh in the background. */
-var CACHE = 'plankmatrix-v2';
+var CACHE = 'plankmatrix-v3';
 var ASSETS = [
   '.', 'index.html', 'app.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'

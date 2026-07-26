@@ -14,14 +14,15 @@ Open the page, edit the sequence (name + duration per hold), hit **START**.
 
 | Control | What it does |
 |---|---|
-| **Sequence** | Any number of holds, each with its own name and time. `+`/`−` step by 15s, or type `2:00` / `90`. |
+| **Sequence** | Any number of holds. Each picks from front / side right / side left / back plank, or **Custom…** to type your own name. `+`/`−` step the time by 15s, or type `2:00` / `90`. |
 | **Preset** | Four ready-made routines; loading one replaces the sequence. |
 | **Rounds** | Repeat the whole sequence *n* times. |
 | **Rest between** | Optional rest segment inserted between holds (not after the last one). |
 | **Lead-in** | Countdown before the first hold — 10s by default, enough room for a full 5·4·3·2·1. |
 | **Voice** | Spoken cues on/off (the beeps stay either way). |
 | **Screen** | Requests a screen wake lock so the phone doesn't dim mid-hold. |
-| **♪ / ▚ / ☾** | Mute, digital rain on/off, light/dark mode. |
+| **♪ / ▚** | Mute, digital rain on/off. |
+| **◐ ☾ ☀** | Theme: follow the system, force dark, force light. Following the system tracks it live, including a change made while the page is open. |
 
 Keyboard: `space` start / pause, `←` `→` previous / next hold, `esc` end session.
 Lock-screen media controls (play/pause/next/previous) work too.
@@ -102,7 +103,8 @@ Serving locally works too: `npx http-server -p 8099 -s .` (a service worker need
 ## Development
 
 ```
-node tools/verify.mjs          # 52 checks: cue timeline, countdown timing, screen-lock recovery
+node tools/verify.mjs          # 78 checks: cue timeline, countdown timing, theme,
+                               #   hold picker, screen-lock recovery
 node tools/make-icons.mjs      # regenerate the PNG icons from the shapes in icon.svg
 ```
 

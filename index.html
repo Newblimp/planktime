@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>PLANK//MATRIX — Interval Timer</title>
 <meta name="description" content="A Matrix-styled plank interval timer with spoken cues that keeps running when your screen is off.">
-<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#dff3e3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" id="tc">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -15,9 +14,11 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<script>/* set the theme before first paint */
-try{var t=localStorage.getItem('plankmatrix.theme');
-document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');}catch(e){}
+<script>/* resolve the theme before first paint: stored mode, else follow the system */
+try{var m=localStorage.getItem('plankmatrix.theme'),
+t=(m==='dark'||m==='light')?m:(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');
+document.documentElement.dataset.theme=t;
+document.getElementById('tc').content=t==='light'?'#dcece0':'#000000';}catch(e){}
 </script>
 <style>
 /* ── theme tokens ───────────────────────────────────────────── */
@@ -25,6 +26,7 @@ document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme: li
   --bg:#000;--bg2:#050c06;--fg:#00ff41;--dim:#0b7a2c;--dim2:#064f1d;
   --hot:#c6ffd6;--line:rgba(0,255,65,.22);--line2:rgba(0,255,65,.10);
   --panel:rgba(0,20,6,.55);--shadow:0 0 8px rgba(0,255,65,.45);--scrim:rgba(0,0,0,.80);
+  --active:rgba(0,255,65,.14);
   --rain-tail:#00c235;--rain-head:#d8ffe4;--rain-fade:0,0,0;--fade-a:.055;
   --warn:#ffe14d;--danger:#ff4d4d;
   --gap:clamp(8px,2.2vw,14px);
@@ -33,6 +35,7 @@ document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme: li
   --bg:#dcece0;--bg2:#f2fbf4;--fg:#04381a;--dim:#2b6b3f;--dim2:#8fbf9f;
   --hot:#012a10;--line:rgba(4,56,26,.34);--line2:rgba(4,56,26,.16);
   --panel:rgba(252,255,253,.80);--shadow:none;--scrim:rgba(226,240,229,.88);
+  --active:rgba(4,56,26,.12);
   --rain-tail:#69ad7d;--rain-head:#25603a;--rain-fade:220,236,224;--fade-a:.085;
   --warn:#8a5a00;--danger:#a11212;
 }
@@ -63,7 +66,14 @@ button,input,select{font:inherit;color:inherit}
   padding:9px 12px;border-radius:2px;cursor:pointer;letter-spacing:.08em;
   text-transform:uppercase;font-size:13px;line-height:1;touch-action:manipulation;
   transition:background .12s linear,border-color .12s linear}
-.btn:active{background:rgba(0,255,65,.14)}
+.btn:active{background:var(--active)}
+/* segmented control (theme) */
+.seg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:2px;overflow:hidden}
+.seg button{background:transparent;border:0;color:var(--dim);padding:9px 8px;min-width:34px;
+  font-size:13px;line-height:1;cursor:pointer;touch-action:manipulation;
+  transition:background .12s linear,color .12s linear}
+.seg button + button{border-left:1px solid var(--line2)}
+.seg button[aria-pressed=true]{color:var(--fg);background:var(--active);text-shadow:var(--shadow)}
 .btn[aria-pressed=true]{border-color:var(--fg);box-shadow:inset 0 0 0 1px var(--line)}
 .btn.icon{padding:9px 10px;min-width:40px}
 .btn:disabled{opacity:.35;cursor:default}
@@ -81,8 +91,11 @@ main{flex:1;display:flex;flex-direction:column}
 /* ── routine editor ─────────────────────────────────────────── */
 #rows{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
 .row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;align-items:center}
+/* the custom-name field drops onto its own line under the picker */
+.row .nm{grid-column:1/-1}
 .nm{background:rgba(0,0,0,.25);border:1px solid var(--line2);
   border-radius:2px;padding:10px;min-width:0;width:100%}
+.nm::placeholder{color:var(--dim);opacity:1}
 :root[data-theme=light] .nm{background:rgba(255,255,255,.6)}
 input:focus-visible,.btn:focus-visible,select:focus-visible{outline:1px solid var(--fg);outline-offset:1px}
 .dur{display:flex;align-items:center;border:1px solid var(--line2);border-radius:2px}
@@ -143,7 +156,11 @@ select{background:rgba(0,0,0,.25);border:1px solid var(--line2);border-radius:2p
     <div class="spacer"></div>
     <button class="btn icon" id="rainToggle" aria-pressed="true" title="Toggle digital rain">▚</button>
     <button class="btn icon" id="soundToggle" aria-pressed="true" title="Mute / unmute">♪</button>
-    <button class="btn icon" id="themeToggle" title="Light / dark mode">☾</button>
+    <div class="seg" role="group" aria-label="Theme">
+      <button data-theme="system" title="Follow system theme" aria-label="Follow system theme">◐</button>
+      <button data-theme="dark" title="Dark mode" aria-label="Dark mode">☾</button>
+      <button data-theme="light" title="Light mode" aria-label="Light mode">☀</button>
+    </div>
   </header>
 
   <main>
